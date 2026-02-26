@@ -1,0 +1,28 @@
+# env / secrets
+# Ignore all env files
+.env
+.env.*
+
+# Except the example file
+!.env.example
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
+
+# build / temp (generic)
+target/
+dist/
+build/
+node_modules/
+
+# docker
+**/.docker/
