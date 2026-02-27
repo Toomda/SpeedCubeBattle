@@ -3,6 +3,7 @@ package com.tomlucksted.speedcubebattle.backend.websocket;
 import com.tomlucksted.speedcubebattle.backend.match.result.JoinResultType;
 import com.tomlucksted.speedcubebattle.backend.match.Match;
 import com.tomlucksted.speedcubebattle.backend.match.MatchService;
+import com.tomlucksted.speedcubebattle.backend.match.result.LeaveMatchResultType;
 import com.tomlucksted.speedcubebattle.backend.match.result.ReadyResultType;
 import com.tomlucksted.speedcubebattle.backend.match.participant.MatchParticipant;
 import com.tomlucksted.speedcubebattle.backend.match.result.StartMatchResultType;
@@ -114,6 +115,9 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 } else if(result.type() == StartMatchResultType.NOT_READY) {
                     send(session, WsMessageType.ERROR, new ErrorPayload("Not all players are ready: " + payload.matchId(), ErrorType.WARNING));
                     return;
+                } else if (result.type() == StartMatchResultType.NOT_IN_MATCH) {
+                    send(session, WsMessageType.ERROR, new ErrorPayload("You are not part of this match: " + payload.matchId(), ErrorType.CRITICAL));
+                    return;
                 }
 
                 var match = result.match();
@@ -125,9 +129,16 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     }
 
     @Override
-    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws Exception {
         sessions.remove(session.getId());
-        System.out.println("WS closed: " + session.getId() + " (" + status + ")");
+        var leaveResult = matchService.leaveBySessionId(session.getId());
+
+        if(leaveResult.type() != LeaveMatchResultType.OK) return;
+        var match = leaveResult.match();
+
+        if(match == null || match.participants().isEmpty()) return;
+
+        broadcastToMatch(match, WsMessageType.LEFT_MATCH, new PlayerLeftPayload(match.id(), leaveResult.playerId(), match.toPlayerInfos()));
     }
 
     private <T> void send(WebSocketSession session, WsMessageType type, T payload) throws Exception {

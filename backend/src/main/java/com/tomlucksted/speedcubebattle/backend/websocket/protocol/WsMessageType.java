@@ -4,6 +4,7 @@ public enum WsMessageType {
     CREATE_MATCH,
     MATCH_CREATED,
     JOIN_MATCH,
+    LEFT_MATCH,
     PLAYER_JOINED,
     SET_READY,
     READY_UPDATED,

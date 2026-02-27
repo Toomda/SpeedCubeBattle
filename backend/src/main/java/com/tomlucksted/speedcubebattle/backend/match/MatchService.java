@@ -37,9 +37,7 @@ public class MatchService {
             if (match.containsPlayer(playerId)) return new JoinResult(JoinResultType.ALREADY_IN_MATCH, match);
             if (match.participants().size() >= MAX_PLAYERS) return new JoinResult(JoinResultType.MATCH_FULL, match);
 
-            ParticipantRole role = match.participants().isEmpty() ? ParticipantRole.HOST : ParticipantRole.GUEST;
-
-            match.addParticipant(new MatchParticipant(playerId, sessionId, role));
+            match.addParticipant(new MatchParticipant(playerId, sessionId));
             sessionToMatchId.put(sessionId, matchId);
             return new JoinResult(JoinResultType.OK, match);
         }
@@ -78,6 +76,35 @@ public class MatchService {
 
             match.start();
             return new StartMatchResult(StartMatchResultType.OK, match);
+        }
+    }
+
+    public LeaveMatchResult leaveBySessionId(String sessionId) {
+        String matchId = sessionToMatchId.remove(sessionId);
+        if(matchId == null) {
+            return new LeaveMatchResult(LeaveMatchResultType.NOT_IN_MATCH, null, null, null);
+        }
+
+        Match match = matches.get(matchId);
+        if(match == null) {
+            return new LeaveMatchResult(LeaveMatchResultType.MATCH_NOT_FOUND, matchId, null, null);
+        }
+
+        synchronized (match) {
+            MatchParticipant participant = match.participantBySession(sessionId);
+            if(participant == null) {
+                return new LeaveMatchResult(LeaveMatchResultType.NOT_IN_MATCH, matchId, null, match);
+            }
+
+            String playerId = participant.playerId();
+
+            match.removeParticipant(playerId);
+
+            if(match.participants().isEmpty()) {
+                matches.remove(matchId);
+            }
+
+            return new LeaveMatchResult(LeaveMatchResultType.OK, matchId, playerId, match);
         }
     }
 

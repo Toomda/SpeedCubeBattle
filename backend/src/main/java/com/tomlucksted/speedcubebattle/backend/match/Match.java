@@ -44,9 +44,22 @@ public class Match {
     }
 
     void addParticipant(MatchParticipant participant) {
-        participants.put(participant.playerId(), participant);
-        if(hostPlayerId == null && participant.role() == ParticipantRole.HOST) {
+        if(hostPlayerId == null && participants.isEmpty()) {
             hostPlayerId = participant.playerId();
+        }
+        participants.put(participant.playerId(), participant);
+    }
+
+    void removeParticipant(String playerId) {
+        participants.remove(playerId);
+
+        if(participants.isEmpty()) {
+            hostPlayerId = null;
+            return;
+        }
+
+        if(playerId.equals(hostPlayerId)) {
+            hostPlayerId = participants.keySet().iterator().next();
         }
     }
 
@@ -76,7 +89,7 @@ public class Match {
 
     public List<PlayerInfo> toPlayerInfos() {
         return participants().stream()
-                .map(p -> new PlayerInfo(p.playerId(), p.ready(), p.role()))
+                .map(p -> new PlayerInfo(p.playerId(), p.ready(), p.playerId().equals(hostPlayerId) ? ParticipantRole.HOST :  ParticipantRole.GUEST))
                 .toList();
     }
 
