@@ -1,10 +1,15 @@
 package com.tomlucksted.speedcubebattle.backend.match;
 
+import com.tomlucksted.speedcubebattle.backend.cube.Move;
+import com.tomlucksted.speedcubebattle.backend.cube.ScrambleGenerator;
 import com.tomlucksted.speedcubebattle.backend.match.participant.MatchParticipant;
 import com.tomlucksted.speedcubebattle.backend.match.participant.ParticipantRole;
 import com.tomlucksted.speedcubebattle.backend.match.result.*;
+import com.tomlucksted.speedcubebattle.backend.websocket.protocol.out.CubeStatePayload;
+import com.tomlucksted.speedcubebattle.backend.websocket.protocol.out.MoveAppliedPayload;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -56,7 +61,7 @@ public class MatchService {
         }
     }
 
-    public StartMatchResult tryStartMatch(String matchId, String starterPlayerId, String sessionId) {
+    public StartMatchResult tryStartMatch(String matchId, String sessionId) {
         Match match = matches.get(matchId);
         if (match == null) return new StartMatchResult(StartMatchResultType.NOT_FOUND, null);
 
@@ -68,13 +73,16 @@ public class MatchService {
             if (caller == null)
                 return new StartMatchResult(StartMatchResultType.NOT_IN_MATCH, match);
 
-            if (caller.role() != ParticipantRole.HOST)
+            if (!caller.playerId().equals(match.hostPlayerId()))
                 return new StartMatchResult(StartMatchResultType.NOT_HOST, match);
 
             if (!match.allReady(MAX_PLAYERS))
                 return new StartMatchResult(StartMatchResultType.NOT_READY, match);
 
-            match.start();
+            long seed = System.nanoTime(); // oder Random/UUID
+            List<Move> scramble = ScrambleGenerator.generate(seed, 20);
+
+            match.start(seed, scramble);
             return new StartMatchResult(StartMatchResultType.OK, match);
         }
     }
@@ -105,6 +113,46 @@ public class MatchService {
             }
 
             return new LeaveMatchResult(LeaveMatchResultType.OK, matchId, playerId, match);
+        }
+    }
+
+    public MoveResult applyMove(String matchId, String sessionId, String moveStr) {
+        Match match = matches.get(matchId);
+        if (match == null) return new MoveResult(MoveResultType.NOT_FOUND, null, null, null);
+
+        synchronized (match) {
+            if (match.state() != MatchState.RUNNING)
+                return new MoveResult(MoveResultType.NOT_RUNNING, match, null, null);
+
+            var caller = match.participantBySession(sessionId);
+            if (caller == null)
+                return new MoveResult(MoveResultType.NOT_IN_MATCH, match, null, null);
+
+            Move move;
+            try {
+                move = Move.parse(moveStr);
+            } catch (Exception e) {
+                return new MoveResult(MoveResultType.INVALID_MOVE, match, null, null);
+            }
+
+            match.applyMoveFor(caller.playerId(), move);
+
+            long seq = match.nextMoveSeq();
+            long serverTs = System.currentTimeMillis();
+
+            boolean solved = match.cubeOf(caller.playerId()).isSolved();
+
+            var applied = new MoveAppliedPayload(matchId, caller.playerId(), moveStr, seq, serverTs);
+
+            var cubePayload = new CubeStatePayload(
+                    matchId,
+                    caller.playerId(),
+                    match.cubeOf(caller.playerId()).facelets(),
+                    match.moveCountOf(caller.playerId()),
+                    solved
+            );
+
+            return new MoveResult(MoveResultType.OK, match, applied, cubePayload);
         }
     }
 

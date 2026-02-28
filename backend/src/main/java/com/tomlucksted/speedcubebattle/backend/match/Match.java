@@ -1,5 +1,7 @@
 package com.tomlucksted.speedcubebattle.backend.match;
 
+import com.tomlucksted.speedcubebattle.backend.cube.CubeState;
+import com.tomlucksted.speedcubebattle.backend.cube.Move;
 import com.tomlucksted.speedcubebattle.backend.match.participant.MatchParticipant;
 import com.tomlucksted.speedcubebattle.backend.match.participant.ParticipantRole;
 import com.tomlucksted.speedcubebattle.backend.websocket.protocol.out.PlayerInfo;
@@ -19,6 +21,26 @@ public class Match {
 
     private final Map<String, MatchParticipant> participants = new ConcurrentHashMap<>();
     private volatile String hostPlayerId;
+    private long moveSeq = 0;
+
+    private volatile Long scrambleSeed;
+    private volatile List<Move> scramble = List.of();
+
+    // pro Spieler eigener Cube
+    private final Map<String, CubeState> cubes = new ConcurrentHashMap<>();
+    private final Map<String, Integer> moveCounts = new ConcurrentHashMap<>();
+
+    public Long scrambleSeed() { return scrambleSeed; }
+    public List<Move> scramble() { return scramble; }
+
+    public CubeState cubeOf(String playerId) {
+        return cubes.get(playerId);
+    }
+
+    public int moveCountOf(String playerId) {
+        return moveCounts.getOrDefault(playerId, 0);
+    }
+
 
     public Match(String id) {
         this.id = id;
@@ -77,9 +99,38 @@ public class Match {
         return true;
     }
 
-    void start() {
+    void start(long seed, List<Move> scrambleMoves) {
         state = MatchState.RUNNING;
         startTime = System.currentTimeMillis();
+
+        this.scrambleSeed = seed;
+        this.scramble = List.copyOf(scrambleMoves);
+
+        // Für alle Teilnehmer: neuen Cube initialisieren und scramble anwenden
+        for (var p : participants.values()) {
+            CubeState cube = new CubeState();
+            for (Move m : scrambleMoves) cube.apply(m);
+
+            cubes.put(p.playerId(), cube);
+            moveCounts.put(p.playerId(), 0);
+
+            // optional: ready resetten, damit lobby-state sauber ist
+            p.setReady(false);
+        }
+    }
+
+    void applyMoveFor(String playerId, Move move) {
+        CubeState cube = cubes.get(playerId);
+        if (cube == null) {
+            // sollte in RUNNING eigentlich nicht passieren, aber defensive
+            cube = new CubeState();
+            for (Move m : scramble) cube.apply(m);
+            cubes.put(playerId, cube);
+            moveCounts.put(playerId, 0);
+        }
+
+        cube.apply(move);
+        moveCounts.put(playerId, moveCountOf(playerId) + 1);
     }
 
     void finish() {
@@ -98,5 +149,10 @@ public class Match {
                 .filter(p -> p.sessionId().equals(sessionId))
                 .findFirst()
                 .orElse(null);
+    }
+
+
+    long nextMoveSeq() {
+        return ++moveSeq;
     }
 }

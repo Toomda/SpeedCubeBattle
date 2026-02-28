@@ -1,4 +1,3 @@
 package com.tomlucksted.speedcubebattle.backend.websocket.protocol.in;
 
-public record StartMatchPayload(String matchId) {
-}
+public record SubmitMovePayload(String matchId, String move) {}
